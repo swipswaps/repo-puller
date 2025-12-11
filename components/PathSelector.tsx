@@ -113,6 +113,24 @@ const PathSelector: React.FC<PathSelectorProps> = ({ label, config, onChange, is
           </div>
         )}
 
+        {config.type === 'git' && (
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Branch (Optional)</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={config.branch || ''}
+                onChange={(e) => handleChange('branch', e.target.value)}
+                placeholder="main"
+                className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-orange-500 transition-colors pl-8"
+              />
+              <div className="absolute left-2.5 top-2.5 text-slate-500">
+                <GitBranch size={14} />
+              </div>
+            </div>
+          </div>
+        )}
+
         <div>
           <label className="block text-xs text-slate-500 mb-1">
             {config.type === 'local' ? 'Absolute Path' : config.type === 'ssh' ? 'Remote Path' : 'Repository URL'}

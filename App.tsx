@@ -256,6 +256,10 @@ const App: React.FC = () => {
     if (source.type === 'git' && source.useGh) {
       cmd += ' --use-gh';
     }
+
+    if (source.type === 'git' && source.branch) {
+      cmd += ` --branch "${source.branch}"`;
+    }
     
     if (dryRun) cmd += ' --dry-run';
     
@@ -283,8 +287,9 @@ const App: React.FC = () => {
     if (source.type === 'ssh' && source.privateKeyPath) {
         sourceLog += ` (Key: ${source.privateKeyPath})`;
     }
-    if (source.type === 'git' && source.useGh) {
-        sourceLog += ` (via GitHub CLI)`;
+    if (source.type === 'git') {
+        if (source.branch) sourceLog += ` (Branch: ${source.branch})`;
+        if (source.useGh) sourceLog += ` (via GitHub CLI)`;
     }
     addLog(sourceLog);
 
