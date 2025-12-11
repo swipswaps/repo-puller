@@ -1,0 +1,5 @@
+{
+  "name": "Repo Puller GUI",
+  "description": "A modern React interface for the Repo Puller synchronization tool, featuring support for Local, SSH, and Git sources with visual status tracking and simulation.",
+  "requestFramePermissions": []
+}
