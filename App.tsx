@@ -19,6 +19,9 @@ const App: React.FC = () => {
     configureFirewall: false
   });
 
+  // Track if user has manually selected a package manager
+  const [pmManuallySet, setPmManuallySet] = useState(false);
+
   const [newPackage, setNewPackage] = useState('');
   const [dryRun, setDryRun] = useState(false);
   const [activeTab, setActiveTab] = useState<'console' | 'history'>('console');
@@ -27,6 +30,15 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [logs, setLogs] = useState<SyncLog[]>([]);
   
+  const addLog = useCallback((message: string, level: SyncLog['level'] = 'info') => {
+    setLogs(prev => [...prev, {
+      id: Date.now() + Math.random(),
+      timestamp: new Date().toISOString(),
+      level,
+      message
+    }]);
+  }, []);
+
   // Auto-detect sudo requirement for target
   useEffect(() => {
     if (target.type === 'local' && target.path.startsWith('/') && 
@@ -35,12 +47,42 @@ const App: React.FC = () => {
     }
   }, [target.path, target.type]);
 
+  // Auto-detect package manager based on Browser Environment
+  useEffect(() => {
+    if (pmManuallySet) return;
+
+    const ua = navigator.userAgent.toLowerCase();
+    let detected: PackageManager | null = null;
+
+    if (ua.includes('macintosh') || ua.includes('mac os x')) {
+      detected = 'brew';
+    } else if (ua.includes('fedora')) {
+      detected = 'dnf';
+    } else if (ua.includes('centos') || ua.includes('rhel')) {
+      detected = 'yum';
+    } else if (ua.includes('arch')) {
+      detected = 'pacman';
+    } else if (ua.includes('suse')) {
+      detected = 'zypper';
+    }
+
+    if (detected) {
+      setSysConfig(prev => {
+        if (prev.packageManager !== detected) {
+          addLog(`System detected: switching package manager to ${detected}`, 'info');
+          return { ...prev, packageManager: detected! };
+        }
+        return prev;
+      });
+    }
+  }, [pmManuallySet, addLog]);
+
   // Auto-check install tools if gh is selected but likely missing
   useEffect(() => {
     if (source.useGh && !sysConfig.installTools) {
        // Optional: could hint user here, but we'll let them decide
     }
-  }, [source.useGh]);
+  }, [source.useGh, sysConfig.installTools]);
   
   // Dummy History Data
   const [history, setHistory] = useState<SyncOperation[]>([
@@ -55,15 +97,6 @@ const App: React.FC = () => {
       backupPath: '/home/owner/Documents/paddle-ocr_backup_20251211_094753'
     }
   ]);
-
-  const addLog = useCallback((message: string, level: SyncLog['level'] = 'info') => {
-    setLogs(prev => [...prev, {
-      id: Date.now() + Math.random(),
-      timestamp: new Date().toISOString(),
-      level,
-      message
-    }]);
-  }, []);
 
   const handleAddPackage = () => {
     const pkg = newPackage.trim();
@@ -94,15 +127,37 @@ const App: React.FC = () => {
 
     // Helper function for tool detection
     if (sysConfig.installTools || sysConfig.configureFirewall) {
-        lines.push('# Function to detect and install missing tools');
-        lines.push('check_install() {');
+        lines.push('# Function to detect, install and verify tool versions');
+        lines.push('check_tool() {');
         lines.push('    CMD=$1');
         lines.push('    PKG=$2');
+        lines.push('    MIN_VER=$3');
+        lines.push('');
         lines.push('    if ! command -v "$CMD" &> /dev/null; then');
         lines.push(`        echo "Tool $CMD not found. Installing $PKG..."`);
         lines.push(`        ${installCmd} "$PKG"`);
         lines.push('    else');
         lines.push(`        echo "Tool $CMD is already installed."`);
+        
+        // Version Check Block
+        lines.push('        if [ ! -z "$MIN_VER" ]; then');
+        lines.push('            CURRENT_VER=""');
+        lines.push('            if [ "$CMD" = "git" ]; then');
+        lines.push("                CURRENT_VER=$(git --version | awk '{print $3}')");
+        lines.push('            elif [ "$CMD" = "ssh" ]; then');
+        lines.push("                CURRENT_VER=$(ssh -V 2>&1 | awk '{print $1}' | cut -d_ -f2 | sed 's/[^0-9.]//g')");
+        lines.push('            fi');
+        lines.push('');
+        lines.push('            if [ ! -z "$CURRENT_VER" ]; then');
+        lines.push('                # Check if CURRENT_VER >= MIN_VER using sort -V');
+        lines.push('                if [ "$(printf \'%s\\n%s\' "$MIN_VER" "$CURRENT_VER" | sort -V | head -n1)" != "$MIN_VER" ]; then');
+        lines.push(`                    echo "⚠️  $CMD version $CURRENT_VER is older than required $MIN_VER. Attempting upgrade..."`);
+        lines.push(`                    ${installCmd} "$PKG"`);
+        lines.push('                else');
+        lines.push(`                    echo "✅ $CMD version $CURRENT_VER meets requirement >= $MIN_VER"`);
+        lines.push('                fi');
+        lines.push('            fi');
+        lines.push('        fi');
         lines.push('    fi');
         lines.push('}');
         lines.push('');
@@ -112,17 +167,18 @@ const App: React.FC = () => {
     if (sysConfig.installTools) {
         lines.push('# --- System Tools Detection & Installation ---');
         
-        lines.push('check_install git git');
-        lines.push('check_install curl curl');
+        // Enforce reasonable minimum versions for modern git/ssh features
+        lines.push('check_tool git git 2.25.0');
+        lines.push('check_tool curl curl');
         
         if (source.useGh) {
-            lines.push('check_install gh gh');
+            lines.push('check_tool gh gh 2.0.0');
         }
 
         if (['apt', 'pacman'].includes(pm)) {
-            lines.push('check_install ssh openssh-client'); // or openssh for pacman, simplified here
+            lines.push('check_tool ssh openssh-client 7.6'); 
         } else {
-            lines.push('check_install ssh openssh');
+            lines.push('check_tool ssh openssh 7.6');
         }
     }
 
@@ -130,14 +186,14 @@ const App: React.FC = () => {
         lines.push('');
         lines.push('# --- Firewall Configuration ---');
         if (['apt', 'pacman'].includes(pm)) {
-            lines.push('check_install ufw ufw');
+            lines.push('check_tool ufw ufw');
             lines.push('echo "Configuring UFW..."');
             lines.push('sudo ufw allow ssh');
             lines.push('sudo ufw allow 80/tcp');
             lines.push('sudo ufw allow 443/tcp');
             lines.push('sudo ufw --force enable');
         } else if (['dnf', 'yum', 'zypper'].includes(pm)) {
-            lines.push('check_install firewall-cmd firewalld');
+            lines.push('check_tool firewall-cmd firewalld');
             lines.push('echo "Configuring Firewalld..."');
             lines.push('sudo systemctl enable --now firewalld');
             lines.push('sudo firewall-cmd --permanent --add-service=ssh');
@@ -244,7 +300,7 @@ const App: React.FC = () => {
 
     // System Config Logs
     if (sysConfig.installTools) {
-        addLog(`[Config] Tool Detection: ON (Checks git, curl, ssh...)`);
+        addLog(`[Config] Tool Detection: ON (Checks git >= 2.25, ssh >= 7.6, etc.)`);
     }
     if (sysConfig.configureFirewall) {
         addLog(`[Config] Firewall Config: ON`);
@@ -298,6 +354,7 @@ const App: React.FC = () => {
 
   const handlePmChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSysConfig(prev => ({ ...prev, packageManager: e.target.value as PackageManager }));
+    setPmManuallySet(true);
   };
 
   return (
