@@ -176,6 +176,43 @@ const App: React.FC = () => {
     return lines.join('\n');
   };
 
+  const generateMockDiff = (filename: string): string[] => {
+    if (filename.endsWith('.tsx')) {
+      return [
+        `--- a/${filename}`,
+        `+++ b/${filename}`,
+        `@@ -15,7 +15,7 @@`,
+        `-  return <div className="scanner">Scanning...</div>;`,
+        `+  return <div className="scanner-v2">Ready</div>;`
+      ];
+    }
+    if (filename.endsWith('.ts')) {
+       return [
+        `--- a/${filename}`,
+        `+++ b/${filename}`,
+        `@@ -42,2 +42,3 @@`,
+        `   return data.filter(item => item.isValid);`,
+        `+ export const formatCurrency = (val: number) => \`$\${val.toFixed(2)}\`;`
+       ]
+    }
+    if (filename === 'README.md') {
+        return [
+        `--- a/${filename}`,
+        `+++ b/${filename}`,
+        `@@ -1,3 +1,4 @@`,
+        ` # Project Title`,
+        `+ Status: Active`
+        ]
+    }
+    return [
+        `--- a/${filename}`,
+        `+++ b/${filename}`,
+        `@@ -12,4 +12,4 @@`,
+        `-  "private": true`,
+        `+  "private": false`
+    ];
+  };
+
   const runSync = async () => {
     if (!source.path || !target.path) {
       addLog('Error: Source and Target paths are required.', 'error');
@@ -288,6 +325,11 @@ const App: React.FC = () => {
         } else {
             addLog(`✅ Copied: ${file}`, 'success');
         }
+        
+        // Show Diff
+        await new Promise(r => setTimeout(r, 150));
+        const diffLines = generateMockDiff(file);
+        diffLines.forEach(line => addLog(line, 'diff'));
     }
 
     await new Promise(r => setTimeout(r, 500));

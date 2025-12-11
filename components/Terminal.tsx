@@ -32,16 +32,25 @@ const Terminal: React.FC<TerminalProps> = ({ logs = [] }) => {
           <div className="text-slate-600 italic">Ready to sync...</div>
         ) : (
           logs.map((log) => (
-            <div key={log.id} className="mb-1 leading-relaxed">
-              <span className="text-slate-500 mr-2">[{log.timestamp.split('T')[1].split('.')[0]}]</span>
-              <span className={`
-                ${log.level === 'info' ? 'text-slate-300' : ''}
-                ${log.level === 'success' ? 'text-emerald-400 font-medium' : ''}
-                ${log.level === 'warning' ? 'text-yellow-400' : ''}
-                ${log.level === 'error' ? 'text-red-400 font-bold' : ''}
-              `}>
-                {log.message}
-              </span>
+            <div key={log.id} className="mb-1 leading-relaxed break-all">
+              <span className="text-slate-500 mr-2 select-none">[{log.timestamp.split('T')[1].split('.')[0]}]</span>
+              {log.level === 'diff' ? (
+                 <span className="font-mono text-xs opacity-90 block pl-4 border-l-2 border-slate-800 my-0.5">
+                   {log.message.startsWith('+') && <span className="text-green-400 bg-green-900/10 px-1 inline-block w-full">{log.message}</span>}
+                   {log.message.startsWith('-') && <span className="text-red-400 bg-red-900/10 px-1 inline-block w-full">{log.message}</span>}
+                   {log.message.startsWith('@') && <span className="text-blue-400">{log.message}</span>}
+                   {!['+', '-', '@'].some(c => log.message.startsWith(c)) && <span className="text-slate-500">{log.message}</span>}
+                 </span>
+              ) : (
+                <span className={`
+                  ${log.level === 'info' ? 'text-slate-300' : ''}
+                  ${log.level === 'success' ? 'text-emerald-400 font-medium' : ''}
+                  ${log.level === 'warning' ? 'text-yellow-400' : ''}
+                  ${log.level === 'error' ? 'text-red-400 font-bold' : ''}
+                `}>
+                  {log.message}
+                </span>
+              )}
             </div>
           ))
         )}

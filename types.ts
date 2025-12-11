@@ -24,7 +24,7 @@ export interface SystemConfig {
 export interface SyncLog {
   id: number;
   timestamp: string;
-  level: 'info' | 'success' | 'warning' | 'error';
+  level: 'info' | 'success' | 'warning' | 'error' | 'diff';
   message: string;
 }
 
