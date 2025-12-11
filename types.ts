@@ -8,6 +8,14 @@ export interface RepoConfig {
   user?: string;
   // Git specific
   branch?: string;
+  useGh?: boolean; // Use GitHub CLI
+  forceSudo?: boolean; // Force usage of sudo for this path
+}
+
+export interface SystemConfig {
+  installDependencies: boolean;
+  installTools: boolean; // gh, ssh, ufw, etc.
+  configureFirewall: boolean;
 }
 
 export interface SyncLog {

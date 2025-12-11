@@ -1,20 +1,21 @@
 import React from 'react';
-import { Folder, Terminal, GitBranch, Globe } from 'lucide-react';
+import { Folder, Terminal, GitBranch, Globe, Shield, Github } from 'lucide-react';
 import { SourceType, RepoConfig } from '../types';
 
 interface PathSelectorProps {
   label: string;
   config: RepoConfig;
   onChange: (config: RepoConfig) => void;
+  isTarget?: boolean;
 }
 
-const PathSelector: React.FC<PathSelectorProps> = ({ label, config, onChange }) => {
+const PathSelector: React.FC<PathSelectorProps> = ({ label, config, onChange, isTarget }) => {
   
   const handleTypeChange = (type: SourceType) => {
     onChange({ ...config, type, path: '' });
   };
 
-  const handleChange = (field: keyof RepoConfig, value: string) => {
+  const handleChange = (field: keyof RepoConfig, value: string | boolean) => {
     onChange({ ...config, [field]: value });
   };
 
@@ -26,10 +27,21 @@ const PathSelector: React.FC<PathSelectorProps> = ({ label, config, onChange }) 
     }
   };
 
+  // Heuristic for sudo suggestion
+  const looksLikeSystemPath = config.path.startsWith('/') && 
+    !config.path.startsWith('/home') && 
+    !config.path.startsWith('/Users') && 
+    !config.path.startsWith('/tmp');
+
   return (
-    <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
+    <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 transition-all hover:border-slate-600">
       <div className="flex items-center justify-between mb-3">
-        <label className="text-sm font-semibold text-slate-300 uppercase tracking-wider">{label}</label>
+        <label className="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+          {label}
+          {config.type === 'git' && config.path.includes('github.com') && (
+            <Github size={14} className="text-slate-500" />
+          )}
+        </label>
         <div className="flex bg-slate-900 rounded-md p-0.5">
           <button
             onClick={() => handleTypeChange('local')}
@@ -88,7 +100,7 @@ const PathSelector: React.FC<PathSelectorProps> = ({ label, config, onChange }) 
           <label className="block text-xs text-slate-500 mb-1">
             {config.type === 'local' ? 'Absolute Path' : config.type === 'ssh' ? 'Remote Path' : 'Repository URL'}
           </label>
-          <div className="relative">
+          <div className="relative group">
             <input
               type="text"
               value={config.path}
@@ -98,12 +110,42 @@ const PathSelector: React.FC<PathSelectorProps> = ({ label, config, onChange }) 
                  config.type === 'local' ? 'focus:border-blue-500' : config.type === 'ssh' ? 'focus:border-purple-500' : 'focus:border-orange-500'
               }`}
             />
-            <div className="absolute left-3 top-2.5 text-slate-500">
+            <div className="absolute left-3 top-2.5 text-slate-500 group-focus-within:text-slate-300 transition-colors">
                {config.type === 'local' && <Folder size={14} />}
                {config.type === 'ssh' && <Terminal size={14} />}
                {config.type === 'git' && <Globe size={14} />}
             </div>
           </div>
+        </div>
+
+        {/* Options Row */}
+        <div className="flex items-center gap-4 pt-1">
+          {config.type === 'git' && (
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={config.useGh || false}
+                onChange={(e) => handleChange('useGh', e.target.checked)}
+                className="rounded border-slate-700 bg-slate-900 text-orange-600 focus:ring-orange-500/50 focus:ring-offset-0 w-4 h-4"
+              />
+              <span className="text-xs text-slate-400 group-hover:text-slate-300 transition-colors">Use GitHub CLI (gh)</span>
+            </label>
+          )}
+
+          {isTarget && config.type === 'local' && (looksLikeSystemPath || config.forceSudo) && (
+            <label className="flex items-center gap-2 cursor-pointer group animate-fadeIn">
+              <input
+                type="checkbox"
+                checked={config.forceSudo || false}
+                onChange={(e) => handleChange('forceSudo', e.target.checked)}
+                className="rounded border-slate-700 bg-slate-900 text-red-600 focus:ring-red-500/50 focus:ring-offset-0 w-4 h-4"
+              />
+              <span className="text-xs text-slate-400 group-hover:text-slate-300 transition-colors flex items-center gap-1">
+                <Shield size={10} className={config.forceSudo ? "text-red-400" : ""} />
+                Run as sudo
+              </span>
+            </label>
+          )}
         </div>
       </div>
     </div>

@@ -1,20 +1,43 @@
-import React, { useState, useCallback } from 'react';
-import { ArrowRight, Play, RefreshCw, Command, Settings, Database, Activity } from 'lucide-react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { ArrowRight, Play, RefreshCw, Command, Settings, Database, Activity, ShieldAlert, CheckSquare, Square } from 'lucide-react';
 import PathSelector from './components/PathSelector';
 import Terminal from './components/Terminal';
 import HistoryTable from './components/HistoryTable';
-import { RepoConfig, SyncLog, SyncOperation } from './types';
+import { RepoConfig, SyncLog, SyncOperation, SystemConfig } from './types';
 
 const App: React.FC = () => {
   // State for the Repo Puller configuration
   const [source, setSource] = useState<RepoConfig>({ type: 'local', path: '' });
   const [target, setTarget] = useState<RepoConfig>({ type: 'local', path: '' });
+  
+  // System Configuration State
+  const [sysConfig, setSysConfig] = useState<SystemConfig>({
+    installDependencies: false,
+    installTools: false,
+    configureFirewall: false
+  });
+
   const [dryRun, setDryRun] = useState(false);
   const [activeTab, setActiveTab] = useState<'console' | 'history'>('console');
 
   // Simulation State
   const [isSyncing, setIsSyncing] = useState(false);
   const [logs, setLogs] = useState<SyncLog[]>([]);
+  
+  // Auto-detect sudo requirement for target
+  useEffect(() => {
+    if (target.type === 'local' && target.path.startsWith('/') && 
+        !target.path.startsWith('/home') && !target.path.startsWith('/Users') && !target.path.startsWith('/tmp')) {
+      setTarget(prev => ({ ...prev, forceSudo: true }));
+    }
+  }, [target.path, target.type]);
+
+  // Auto-check install tools if gh is selected but likely missing
+  useEffect(() => {
+    if (source.useGh && !sysConfig.installTools) {
+       // Optional: could hint user here, but we'll let them decide
+    }
+  }, [source.useGh]);
   
   // Dummy History Data
   const [history, setHistory] = useState<SyncOperation[]>([
@@ -40,24 +63,62 @@ const App: React.FC = () => {
   }, []);
 
   const generateCommand = () => {
-    let cmd = 'python3 sync.py';
+    const lines: string[] = [];
+
+    // System Setup Commands
+    if (sysConfig.installTools) {
+        lines.push('# Install System Tools');
+        lines.push('sudo apt-get update');
+        lines.push('sudo apt-get install -y git gh openssh-client ufw curl');
+    }
+
+    if (sysConfig.configureFirewall) {
+        lines.push('# Configure Firewall');
+        lines.push('sudo ufw allow ssh');
+        lines.push('sudo ufw allow 80/tcp');
+        lines.push('sudo ufw allow 443/tcp');
+        lines.push('sudo ufw --force enable');
+    }
+
+    if (sysConfig.installDependencies) {
+        lines.push('# Install Python Dependencies');
+        lines.push('pip3 install -r requirements.txt');
+    }
+
+    // Main Sync Command
+    if (lines.length > 0) lines.push('\n# Run Sync');
     
-    // Logic to construct source argument based on type
-    const sourceStr = source.type === 'ssh' 
-      ? `ssh://${source.user || 'user'}@${source.host || 'host'}:${source.path}`
-      : source.path;
-      
-    // Logic to construct target argument based on type
-    const targetStr = target.type === 'ssh' 
-      ? `ssh://${target.user || 'user'}@${target.host || 'host'}:${target.path}`
-      : target.path;
+    let cmd = '';
+    if (target.forceSudo) {
+      cmd += 'sudo ';
+    }
+    
+    cmd += 'python3 sync.py';
+    
+    // Source construction
+    let sourceStr = source.path;
+    if (source.type === 'ssh') {
+        sourceStr = `ssh://${source.user || 'user'}@${source.host || 'host'}:${source.path}`;
+    }
+    
+    // Target construction
+    let targetStr = target.path;
+    if (target.type === 'ssh') {
+        targetStr = `ssh://${target.user || 'user'}@${target.host || 'host'}:${target.path}`;
+    }
 
     cmd += ` --source "${sourceStr}"`;
     cmd += ` --target "${targetStr}"`;
     
+    if (source.type === 'git' && source.useGh) {
+      cmd += ' --use-gh';
+    }
+    
     if (dryRun) cmd += ' --dry-run';
     
-    return cmd;
+    lines.push(cmd);
+    
+    return lines.join('\n');
   };
 
   const runSync = async () => {
@@ -70,15 +131,56 @@ const App: React.FC = () => {
     setLogs([]);
     setActiveTab('console');
 
-    // Simulate the python script execution logic
-    addLog('Repo Puller - Sync Operation Initiated');
+    addLog('Repo Puller - Operation Started');
+    
+    // Simulation: Installation
+    if (sysConfig.installTools) {
+        addLog('Updating package lists (sudo apt-get update)...');
+        await new Promise(r => setTimeout(r, 800));
+        addLog('Installing tools: git, gh, openssh-client, ufw...', 'warning');
+        await new Promise(r => setTimeout(r, 1500));
+        addLog('✅ System tools installed.', 'success');
+    }
+
+    // Simulation: Firewall
+    if (sysConfig.configureFirewall) {
+        addLog('Configuring firewall (ufw)...', 'warning');
+        await new Promise(r => setTimeout(r, 600));
+        addLog('✅ Firewall rules updated (Allow SSH, 80, 443).', 'success');
+    }
+
+    // Simulation: Dependencies
+    if (sysConfig.installDependencies) {
+        addLog('Installing python requirements...', 'info');
+        await new Promise(r => setTimeout(r, 800));
+        addLog('✅ Dependencies installed.', 'success');
+    }
+
+    // Simulation: Sync
     addLog('================================================================');
     addLog(`Source (${source.type}): ${source.path}`);
+    if (target.forceSudo) addLog('Elevating privileges for target write access...', 'warning');
     addLog(`Target (${target.type}): ${target.path}`);
-    addLog(`Dry Run: ${dryRun}`);
     addLog('================================================================');
     
     await new Promise(r => setTimeout(r, 800));
+
+    if (source.type === 'git') {
+      if (source.useGh) {
+          addLog('Authenticating via GitHub CLI...', 'info');
+          await new Promise(r => setTimeout(r, 500));
+      }
+      addLog(`Cloning repository from ${source.path}...`);
+      await new Promise(r => setTimeout(r, 1200));
+      
+      // Handle subdirectories in git
+      if (source.path.includes('tree') || source.path.split('/').length > 5) {
+        const repoParts = source.path.split('github.com/')[1]?.split('/');
+        if (repoParts && repoParts.length >= 2) {
+             addLog(`Detected sparse checkout requirement for '${repoParts.slice(2).join('/')}'`, 'info');
+        }
+      }
+    }
     
     if (!dryRun) {
         const backupName = `${target.path.split('/').pop()}_backup_${new Date().toISOString().replace(/[-:.]/g, '').slice(0, 14)}`;
@@ -138,6 +240,10 @@ const App: React.FC = () => {
     }
   };
 
+  const toggleSysConfig = (key: keyof SystemConfig) => {
+    setSysConfig(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
@@ -186,8 +292,51 @@ const App: React.FC = () => {
               <PathSelector 
                 label="Target Repository" 
                 config={target} 
-                onChange={setTarget} 
+                onChange={setTarget}
+                isTarget={true}
               />
+
+              {/* System Configuration Panel */}
+              <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
+                <div className="flex items-center gap-2 mb-3 text-slate-300 text-sm font-semibold">
+                    <ShieldAlert size={14} className="text-orange-400" />
+                    <span>System & Prerequisites (Sudo Required)</span>
+                </div>
+                <div className="space-y-2">
+                    <button 
+                        onClick={() => toggleSysConfig('installTools')}
+                        className="flex items-center gap-3 w-full p-2 rounded hover:bg-slate-800 transition-colors text-left"
+                    >
+                        {sysConfig.installTools ? <CheckSquare size={16} className="text-blue-500" /> : <Square size={16} className="text-slate-500" />}
+                        <div>
+                            <div className="text-xs font-medium text-slate-200">Install System Tools</div>
+                            <div className="text-[10px] text-slate-500">git, gh, openssh-client, ufw, curl</div>
+                        </div>
+                    </button>
+                    
+                    <button 
+                        onClick={() => toggleSysConfig('configureFirewall')}
+                        className="flex items-center gap-3 w-full p-2 rounded hover:bg-slate-800 transition-colors text-left"
+                    >
+                        {sysConfig.configureFirewall ? <CheckSquare size={16} className="text-blue-500" /> : <Square size={16} className="text-slate-500" />}
+                        <div>
+                            <div className="text-xs font-medium text-slate-200">Configure Firewall</div>
+                            <div className="text-[10px] text-slate-500">Allow SSH, HTTP/HTTPS via ufw</div>
+                        </div>
+                    </button>
+
+                     <button 
+                        onClick={() => toggleSysConfig('installDependencies')}
+                        className="flex items-center gap-3 w-full p-2 rounded hover:bg-slate-800 transition-colors text-left"
+                    >
+                        {sysConfig.installDependencies ? <CheckSquare size={16} className="text-blue-500" /> : <Square size={16} className="text-slate-500" />}
+                        <div>
+                            <div className="text-xs font-medium text-slate-200">Install Dependencies</div>
+                            <div className="text-[10px] text-slate-500">pip install -r requirements.txt</div>
+                        </div>
+                    </button>
+                </div>
+              </div>
 
               <div className="bg-slate-900 rounded-lg p-3 border border-slate-800">
                 <div className="flex items-center justify-between">
@@ -228,7 +377,7 @@ const App: React.FC = () => {
                 <div className="text-xs text-slate-500 mb-1 flex items-center gap-1">
                   <Command size={10} /> Generated Command
                 </div>
-                <code className="text-xs font-mono text-emerald-400 break-all block">
+                <code className="text-xs font-mono text-emerald-400 break-all whitespace-pre-wrap block max-h-40 overflow-y-auto">
                   {generateCommand()}
                 </code>
               </div>
