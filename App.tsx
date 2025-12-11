@@ -148,12 +148,18 @@ const App: React.FC = () => {
     let sourceStr = source.path;
     if (source.type === 'ssh') {
         sourceStr = `ssh://${source.user || 'user'}@${source.host || 'host'}:${source.path}`;
+        if (source.privateKeyPath) {
+            sourceStr += `?identity_file=${source.privateKeyPath}`;
+        }
     }
     
     // Target construction
     let targetStr = target.path;
     if (target.type === 'ssh') {
         targetStr = `ssh://${target.user || 'user'}@${target.host || 'host'}:${target.path}`;
+        if (target.privateKeyPath) {
+            targetStr += `?identity_file=${target.privateKeyPath}`;
+        }
     }
 
     cmd += ` --source "${sourceStr}"`;
@@ -220,9 +226,21 @@ const App: React.FC = () => {
 
     // Simulation: Sync
     addLog('================================================================');
-    addLog(`Source (${source.type}): ${source.path}`);
+    
+    let sourceLog = `Source (${source.type}): ${source.path}`;
+    if (source.type === 'ssh' && source.privateKeyPath) {
+        sourceLog += ` (Key: ${source.privateKeyPath})`;
+    }
+    addLog(sourceLog);
+
     if (target.forceSudo) addLog('Elevating privileges for target write access...', 'warning');
-    addLog(`Target (${target.type}): ${target.path}`);
+    
+    let targetLog = `Target (${target.type}): ${target.path}`;
+    if (target.type === 'ssh' && target.privateKeyPath) {
+        targetLog += ` (Key: ${target.privateKeyPath})`;
+    }
+    addLog(targetLog);
+
     addLog('================================================================');
     
     await new Promise(r => setTimeout(r, 800));

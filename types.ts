@@ -7,6 +7,7 @@ export interface RepoConfig {
   // SSH specific
   host?: string;
   user?: string;
+  privateKeyPath?: string;
   // Git specific
   branch?: string;
   useGh?: boolean; // Use GitHub CLI
