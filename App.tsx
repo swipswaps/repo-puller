@@ -176,43 +176,6 @@ const App: React.FC = () => {
     return lines.join('\n');
   };
 
-  const generateMockDiff = (filename: string): string[] => {
-    if (filename.endsWith('.tsx')) {
-      return [
-        `--- a/${filename}`,
-        `+++ b/${filename}`,
-        `@@ -15,7 +15,7 @@`,
-        `-  return <div className="scanner">Scanning...</div>;`,
-        `+  return <div className="scanner-v2">Ready</div>;`
-      ];
-    }
-    if (filename.endsWith('.ts')) {
-       return [
-        `--- a/${filename}`,
-        `+++ b/${filename}`,
-        `@@ -42,2 +42,3 @@`,
-        `   return data.filter(item => item.isValid);`,
-        `+ export const formatCurrency = (val: number) => \`$\${val.toFixed(2)}\`;`
-       ]
-    }
-    if (filename === 'README.md') {
-        return [
-        `--- a/${filename}`,
-        `+++ b/${filename}`,
-        `@@ -1,3 +1,4 @@`,
-        ` # Project Title`,
-        `+ Status: Active`
-        ]
-    }
-    return [
-        `--- a/${filename}`,
-        `+++ b/${filename}`,
-        `@@ -12,4 +12,4 @@`,
-        `-  "private": true`,
-        `+  "private": false`
-    ];
-  };
-
   const runSync = async () => {
     if (!source.path || !target.path) {
       addLog('Error: Source and Target paths are required.', 'error');
@@ -224,117 +187,51 @@ const App: React.FC = () => {
     setActiveTab('console');
     const pm = sysConfig.packageManager;
 
-    addLog(`Repo Puller - Operation Started [Manager: ${pm.toUpperCase()}]`);
-    
-    // Simulation: Installation
-    if (sysConfig.installTools) {
-        if (pm === 'apt') addLog('Updating package lists (sudo apt-get update)...');
-        
-        let toolNameList = 'git, gh, curl';
-        if (['dnf', 'yum', 'zypper'].includes(pm)) toolNameList += ', openssh-clients, firewalld';
-        else toolNameList += ', openssh-client, ufw';
-        
-        addLog(`Installing tools via ${pm}: ${toolNameList}...`, 'warning');
-        await new Promise(r => setTimeout(r, 1500));
-        addLog('✅ System tools installed.', 'success');
-    }
-
-    // Simulation: Firewall
-    if (sysConfig.configureFirewall) {
-        if (['dnf', 'yum', 'zypper'].includes(pm)) {
-            addLog('Configuring firewall (firewall-cmd)...', 'warning');
-            await new Promise(r => setTimeout(r, 600));
-            addLog('✅ Firewall rules updated (ssh, http, https).', 'success');
-        } else if (['apt', 'pacman'].includes(pm)) {
-            addLog('Configuring firewall (ufw)...', 'warning');
-            await new Promise(r => setTimeout(r, 600));
-            addLog('✅ Firewall rules updated (Allow SSH, 80, 443).', 'success');
-        } else {
-             addLog('⚠️ Skipping firewall config (Not supported for selected OS).', 'warning');
-        }
-    }
-
-    // Simulation: Dependencies
-    if (sysConfig.installDependencies) {
-        addLog('Installing python requirements...', 'info');
-        await new Promise(r => setTimeout(r, 800));
-        addLog('✅ Dependencies installed.', 'success');
-    }
-
-    // Simulation: Sync
+    addLog(`Repo Puller - Configuration Validated [Manager: ${pm.toUpperCase()}]`);
     addLog('================================================================');
     
+    // Log Source details
     let sourceLog = `Source (${source.type}): ${source.path}`;
     if (source.type === 'ssh' && source.privateKeyPath) {
         sourceLog += ` (Key: ${source.privateKeyPath})`;
     }
+    if (source.type === 'git' && source.useGh) {
+        sourceLog += ` (via GitHub CLI)`;
+    }
     addLog(sourceLog);
 
-    if (target.forceSudo) addLog('Elevating privileges for target write access...', 'warning');
-    
+    // Log Target details
     let targetLog = `Target (${target.type}): ${target.path}`;
+    if (target.forceSudo) targetLog += ` (Sudo Enabled)`;
     if (target.type === 'ssh' && target.privateKeyPath) {
         targetLog += ` (Key: ${target.privateKeyPath})`;
     }
     addLog(targetLog);
 
     addLog('================================================================');
-    
-    await new Promise(r => setTimeout(r, 800));
 
-    if (source.type === 'git') {
-      if (source.useGh) {
-          addLog('Authenticating via GitHub CLI...', 'info');
-          await new Promise(r => setTimeout(r, 500));
-      }
-      addLog(`Cloning repository from ${source.path}...`);
-      await new Promise(r => setTimeout(r, 1200));
-      
-      // Handle subdirectories in git
-      if (source.path.includes('tree') || source.path.split('/').length > 5) {
-        const repoParts = source.path.split('github.com/')[1]?.split('/');
-        if (repoParts && repoParts.length >= 2) {
-             addLog(`Detected sparse checkout requirement for '${repoParts.slice(2).join('/')}'`, 'info');
-        }
-      }
+    // System Config Logs
+    if (sysConfig.installTools) {
+        addLog(`[Config] Install System Tools: ON (${pm})`);
     }
-    
-    if (!dryRun) {
-        const backupName = `${target.path.split('/').pop()}_backup_${new Date().toISOString().replace(/[-:.]/g, '').slice(0, 14)}`;
-        addLog(`Creating backup at: ${target.path}/../${backupName}...`, 'warning');
-        addLog('Backup successful. Size: 45MB', 'success');
+    if (sysConfig.configureFirewall) {
+        addLog(`[Config] Configure Firewall: ON`);
+    }
+    if (sysConfig.installDependencies) {
+        addLog(`[Config] Install Python Dependencies: ON`);
     }
 
-    await new Promise(r => setTimeout(r, 600));
-    addLog('Analyzing files to sync...');
+    addLog('Generating synchronization command...');
     
-    await new Promise(r => setTimeout(r, 1000));
-    addLog('Found 4 files to sync');
+    // Slight delay for UX
+    await new Promise(r => setTimeout(r, 400)); 
 
-    const files = [
-        'src/components/Scanner.tsx',
-        'src/utils/helpers.ts',
-        'README.md',
-        'package.json'
-    ];
+    const cmd = generateCommand();
+    addLog('Command generated successfully:', 'success');
+    addLog(cmd, 'info');
 
-    for (const file of files) {
-        await new Promise(r => setTimeout(r, 400));
-        if (dryRun) {
-            addLog(`Would copy: ${file}`, 'info');
-        } else {
-            addLog(`✅ Copied: ${file}`, 'success');
-        }
-        
-        // Show Diff
-        await new Promise(r => setTimeout(r, 150));
-        const diffLines = generateMockDiff(file);
-        diffLines.forEach(line => addLog(line, 'diff'));
-    }
-
-    await new Promise(r => setTimeout(r, 500));
     addLog('================================================================');
-    addLog(`Sync Summary: Files copied: ${dryRun ? 0 : 4}, Failed: 0`);
+    addLog('Ready for execution. Please run the generated command in your terminal.', 'warning');
     
     if (!dryRun) {
         setHistory(prev => [{
@@ -343,9 +240,9 @@ const App: React.FC = () => {
             source: source.path,
             target: target.path,
             status: 'completed',
-            filesCopied: 4,
+            filesCopied: 0,
             filesFailed: 0,
-            backupPath: `${target.path}_backup`
+            backupPath: ''
         }, ...prev]);
     }
 
@@ -353,12 +250,10 @@ const App: React.FC = () => {
   };
 
   const handleRollback = (id: number) => {
-    const confirm = window.confirm(`Are you sure you want to rollback operation #${id}? This will overwrite the current target.`);
+    // Rollback is manual in this context
+    const confirm = window.confirm(`Rollback requires manual intervention for operation #${id}. View log details?`);
     if (confirm) {
-        setHistory(prev => prev.map(op => 
-            op.id === id ? { ...op, status: 'rolled_back' } : op
-        ));
-        addLog(`Rollback for operation #${id} completed successfully.`, 'warning');
+        addLog(`Rollback requested for #${id}. Please manually restore from backup if available.`, 'warning');
     }
   };
 
@@ -521,7 +416,7 @@ const App: React.FC = () => {
                   ) : (
                     <Play size={20} fill="currentColor" />
                   )}
-                  {isSyncing ? 'Syncing...' : 'Start Synchronization'}
+                  {isSyncing ? 'Processing...' : 'Generate Command'}
                 </button>
               </div>
 
@@ -555,7 +450,7 @@ const App: React.FC = () => {
                 activeTab === 'history' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Activity size={16} /> History & Rollback
+              <Activity size={16} /> History
             </button>
           </div>
 
