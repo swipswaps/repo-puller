@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { SyncLog } from '../types';
+import { TerminalSquare, Play, Settings, Download } from 'lucide-react';
 
 interface TerminalProps {
   logs?: SyncLog[];
@@ -15,7 +16,7 @@ const Terminal: React.FC<TerminalProps> = ({ logs = [] }) => {
   }, [logs]);
 
   return (
-    <div className="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden flex flex-col h-full shadow-inner">
+    <div className="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden flex flex-col h-full shadow-inner relative">
       <div className="bg-slate-900 px-4 py-2 border-b border-slate-800 flex items-center justify-between">
         <span className="text-xs font-mono text-slate-400">sync_output.log</span>
         <div className="flex gap-1.5">
@@ -26,10 +27,36 @@ const Terminal: React.FC<TerminalProps> = ({ logs = [] }) => {
       </div>
       <div 
         ref={scrollRef}
-        className="flex-1 p-4 overflow-y-auto font-mono text-sm terminal-scroll"
+        className="flex-1 p-4 overflow-y-auto font-mono text-sm terminal-scroll relative"
       >
         {!logs || logs.length === 0 ? (
-          <div className="text-slate-600 italic">Ready to sync...</div>
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-600 p-8 text-center opacity-60 pointer-events-none">
+            <TerminalSquare size={48} className="mb-4 text-slate-700" />
+            <h3 className="text-lg font-semibold text-slate-500 mb-2">Ready to Configure</h3>
+            <p className="text-xs max-w-xs leading-relaxed mb-6">
+              Configure your source and target repositories on the left, then click Generate Script to see the output here.
+            </p>
+            <div className="flex gap-6 text-xs">
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-8 h-8 rounded bg-slate-900 flex items-center justify-center border border-slate-800">
+                  <Settings size={14} />
+                </div>
+                <span>Configure</span>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-8 h-8 rounded bg-slate-900 flex items-center justify-center border border-slate-800">
+                  <Play size={14} />
+                </div>
+                <span>Generate</span>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-8 h-8 rounded bg-slate-900 flex items-center justify-center border border-slate-800">
+                  <Download size={14} />
+                </div>
+                <span>Download</span>
+              </div>
+            </div>
+          </div>
         ) : (
           logs.map((log) => (
             <div key={log.id} className="mb-1 leading-relaxed break-all">

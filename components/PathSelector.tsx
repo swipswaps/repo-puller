@@ -7,9 +7,10 @@ interface PathSelectorProps {
   config: RepoConfig;
   onChange: (config: RepoConfig) => void;
   isTarget?: boolean;
+  error?: boolean;
 }
 
-const PathSelector: React.FC<PathSelectorProps> = ({ label, config, onChange, isTarget }) => {
+const PathSelector: React.FC<PathSelectorProps> = ({ label, config, onChange, isTarget, error }) => {
   
   const handleTypeChange = (type: SourceType) => {
     onChange({ ...config, type, path: '' });
@@ -34,9 +35,9 @@ const PathSelector: React.FC<PathSelectorProps> = ({ label, config, onChange, is
     !config.path.startsWith('/tmp');
 
   return (
-    <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 transition-all hover:border-slate-600">
+    <div className={`bg-slate-800/50 p-4 rounded-lg border transition-all hover:border-slate-600 ${error ? 'border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.1)]' : 'border-slate-700'}`}>
       <div className="flex items-center justify-between mb-3">
-        <label className="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+        <label className={`text-sm font-semibold uppercase tracking-wider flex items-center gap-2 ${error ? 'text-red-400' : 'text-slate-300'}`}>
           {label}
           {config.type === 'git' && config.path.includes('github.com') && (
             <Github size={14} className="text-slate-500" />
@@ -72,7 +73,7 @@ const PathSelector: React.FC<PathSelectorProps> = ({ label, config, onChange, is
 
       <div className="space-y-3">
         {config.type === 'ssh' && (
-          <div className="space-y-3">
+          <div className="space-y-3 animate-fadeIn">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-slate-500 mb-1">User</label>
@@ -114,7 +115,7 @@ const PathSelector: React.FC<PathSelectorProps> = ({ label, config, onChange, is
         )}
 
         {config.type === 'git' && (
-          <div>
+          <div className="animate-fadeIn">
             <label className="block text-xs text-slate-500 mb-1">Branch (Optional)</label>
             <div className="relative">
               <input
@@ -141,7 +142,9 @@ const PathSelector: React.FC<PathSelectorProps> = ({ label, config, onChange, is
               value={config.path}
               onChange={(e) => handleChange('path', e.target.value)}
               placeholder={getPlaceholder()}
-              className={`w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none transition-colors pl-9 ${
+              className={`w-full bg-slate-900 border rounded px-3 py-2 text-sm text-slate-200 focus:outline-none transition-colors pl-9 ${
+                 error ? 'border-red-500/50' : 'border-slate-700'
+              } ${
                  config.type === 'local' ? 'focus:border-blue-500' : config.type === 'ssh' ? 'focus:border-purple-500' : 'focus:border-orange-500'
               }`}
             />

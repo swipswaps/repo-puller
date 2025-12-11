@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { 
   ArrowRight, Play, RefreshCw, Command, Settings, Database, Activity, 
   ShieldAlert, CheckSquare, Square, Box, Plus, X, ChevronRight, ChevronLeft, 
-  Check, FileCode, Copy, Download
+  Check, FileCode, Copy, Download, ArrowUpDown
 } from 'lucide-react';
 import PathSelector from './components/PathSelector';
 import Terminal from './components/Terminal';
@@ -13,6 +13,7 @@ const App: React.FC = () => {
   // State for the Repo Puller configuration
   const [source, setSource] = useState<RepoConfig>({ type: 'local', path: '' });
   const [target, setTarget] = useState<RepoConfig>({ type: 'local', path: '' });
+  const [errors, setErrors] = useState<{source?: boolean; target?: boolean}>({});
   
   // System Configuration State
   const [sysConfig, setSysConfig] = useState<SystemConfig>({
@@ -104,6 +105,13 @@ const App: React.FC = () => {
       backupPath: '/home/owner/Documents/paddle-ocr_backup_20251211_094753'
     }
   ]);
+
+  const handleSwap = () => {
+    setSource(target);
+    setTarget(source);
+    setErrors({});
+    addLog('Swapped Source and Target configurations.', 'info');
+  };
 
   const handleAddPackage = () => {
     const pkg = newPackage.trim();
@@ -290,6 +298,52 @@ check_tool() {
     return parts.filter(p => p !== '').join('\n');
   };
 
+  const runLinter = () => {
+      addLog('Running static analysis...', 'info');
+      const script = generateFullScript();
+      
+      const lines = script.split('\n');
+      let issuesFound = false;
+
+      lines.forEach((line, idx) => {
+          const l = line.trim();
+          const lineNum = idx + 1;
+          
+          if (!l || l.startsWith('#')) return;
+
+          // Check for spaces around assignment (SC1068)
+          if (/^[a-zA-Z_][a-zA-Z0-9_]*\s+=\s+/.test(l) || /^[a-zA-Z_][a-zA-Z0-9_]*\s+=/.test(l) || /^[a-zA-Z_][a-zA-Z0-9_]*=\s+/.test(l)) {
+              if (!l.includes('[') && !l.includes('if')) {
+                   addLog(`[SC1068] Line ${lineNum}: Spaces around assignment detected.`, 'error');
+                   issuesFound = true;
+              }
+          }
+
+          // Check for unquoted variables in echo/printf/commands (SC2086) - Heuristic
+          if (l.includes('$') && !l.includes('"') && !l.includes("'")) {
+              if (!l.includes('=') && !l.startsWith('if') && !l.startsWith('while') && !l.startsWith('check_tool')) {
+                  addLog(`[SC2086] Line ${lineNum}: Double quote variables to prevent globbing/word splitting.`, 'warning');
+              }
+          }
+
+          // Check for if [ condition] (SC1035)
+          if (l.includes('if [') && !l.includes('if [ ')) {
+              addLog(`[SC1035] Line ${lineNum}: Missing space after '['.`, 'error');
+              issuesFound = true;
+          }
+           if (l.includes(' ]') === false && l.endsWith(']')) {
+               if (l.includes('[ ') && !l.endsWith(' ]') && l.endsWith(']')) {
+                   addLog(`[SC1035] Line ${lineNum}: Missing space before ']'.`, 'error');
+                   issuesFound = true;
+               }
+          }
+      });
+
+      if (!issuesFound) {
+          addLog('Script passed syntax checks.', 'success');
+      }
+  };
+
   const toggleSysConfig = (key: keyof SystemConfig) => {
     setSysConfig(prev => ({ ...prev, [key]: !prev[key] }));
   };
@@ -299,22 +353,83 @@ check_tool() {
     setPmManuallySet(true);
   };
 
+  const validateRepoConfig = (config: RepoConfig, label: string): string[] => {
+    const errors: string[] = [];
+    
+    // Basic Path check
+    if (!config.path || config.path.trim() === '') {
+        errors.push(`${label}: Path is required.`);
+        return errors;
+    }
+
+    // Local Validation
+    if (config.type === 'local') {
+        if (!config.path.startsWith('/')) {
+            errors.push(`${label}: Local path must be absolute (start with '/').`);
+        }
+    }
+
+    // SSH Validation
+    if (config.type === 'ssh') {
+        if (!config.host || config.host.trim() === '') {
+            errors.push(`${label}: SSH Host is required.`);
+        }
+        if (!config.user || config.user.trim() === '') {
+            errors.push(`${label}: SSH User is required.`);
+        }
+        if (!config.path.startsWith('/')) {
+            errors.push(`${label}: Remote path must be absolute (start with '/').`);
+        }
+    }
+
+    // Git Validation
+    if (config.type === 'git') {
+        const gitProtocols = ['https://', 'http://', 'git@', 'ssh://', 'git://'];
+        const hasValidProtocol = gitProtocols.some(protocol => config.path.startsWith(protocol));
+        
+        if (!hasValidProtocol) {
+            errors.push(`${label}: Invalid Git URL. Must start with https://, http://, git@, ssh://, or git://`);
+        }
+        
+        if (config.path.startsWith('git@') && !config.path.includes(':')) {
+             errors.push(`${label}: Invalid SCP-like Git URL. Missing ':' separator.`);
+        }
+    }
+
+    return errors;
+  };
+
   const startWizard = () => {
-      if (!source.path || !target.path) {
-        addLog('Error: Source and Target paths are required before generation.', 'error');
-        return;
+      const sourceErrors = validateRepoConfig(source, 'Source');
+      const targetErrors = validateRepoConfig(target, 'Target');
+      
+      const newErrorsState = {
+          source: sourceErrors.length > 0,
+          target: targetErrors.length > 0
+      };
+
+      setErrors(newErrorsState);
+
+      if (sourceErrors.length > 0 || targetErrors.length > 0) {
+          addLog('Validation failed:', 'error');
+          sourceErrors.forEach(e => addLog(`• ${e}`, 'error'));
+          targetErrors.forEach(e => addLog(`• ${e}`, 'error'));
+          return;
       }
+      
       setWizardStep(0);
       setLogs([]);
       addLog('Started configuration wizard.', 'info');
   };
 
   const copyToClipboard = () => {
+      runLinter(); // Lint before action
       navigator.clipboard.writeText(generateFullScript());
       addLog('Script copied to clipboard.', 'success');
   };
 
   const downloadScript = () => {
+      runLinter(); // Lint before action
       const content = generateFullScript();
       const blob = new Blob([content], { type: 'text/x-sh' });
       const url = URL.createObjectURL(blob);
@@ -326,6 +441,13 @@ check_tool() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       addLog('Script downloaded as sync_script.sh', 'success');
+  };
+
+  const handleWizardNext = () => {
+      if (wizardStep === 3) {
+          runLinter();
+      }
+      setWizardStep(prev => prev + 1);
   };
 
   const finishWizard = () => {
@@ -624,11 +746,19 @@ check_tool() {
                   <PathSelector 
                     label="Source Repository" 
                     config={source} 
-                    onChange={setSource} 
+                    onChange={setSource}
+                    error={errors.source} 
                   />
 
-                  <div className="flex justify-center text-slate-600">
-                    <ArrowRight size={20} className="transform rotate-90 lg:rotate-0" />
+                  <div className="flex justify-center text-slate-600 relative group">
+                    <button 
+                      onClick={handleSwap}
+                      className="bg-slate-800 p-2 rounded-full border border-slate-700 hover:bg-slate-700 hover:text-white hover:border-blue-500 transition-all z-10 shadow-lg group-hover:scale-110"
+                      title="Swap Source and Target"
+                    >
+                      <ArrowUpDown size={16} />
+                    </button>
+                    <div className="absolute h-full w-px bg-slate-800 top-0 left-1/2 -z-0"></div>
                   </div>
 
                   <PathSelector 
@@ -636,6 +766,7 @@ check_tool() {
                     config={target} 
                     onChange={setTarget}
                     isTarget={true}
+                    error={errors.target}
                   />
 
                    {/* Manual System Configuration Block - RESTORED */}
@@ -736,7 +867,7 @@ check_tool() {
                            </button>
                       ) : (
                           <button
-                            onClick={() => setWizardStep(prev => prev + 1)}
+                            onClick={handleWizardNext}
                             className="flex-1 px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
                            >
                              Next <ChevronRight size={16} />
