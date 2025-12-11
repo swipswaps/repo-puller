@@ -17,6 +17,7 @@ export interface RepoConfig {
 export interface SystemConfig {
   packageManager: PackageManager;
   installDependencies: boolean;
+  pythonPackages: string[];
   installTools: boolean; // gh, ssh, ufw, etc.
   configureFirewall: boolean;
 }

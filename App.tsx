@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { ArrowRight, Play, RefreshCw, Command, Settings, Database, Activity, ShieldAlert, CheckSquare, Square, Box } from 'lucide-react';
+import { ArrowRight, Play, RefreshCw, Command, Settings, Database, Activity, ShieldAlert, CheckSquare, Square, Box, Plus, X } from 'lucide-react';
 import PathSelector from './components/PathSelector';
 import Terminal from './components/Terminal';
 import HistoryTable from './components/HistoryTable';
@@ -14,10 +14,12 @@ const App: React.FC = () => {
   const [sysConfig, setSysConfig] = useState<SystemConfig>({
     packageManager: 'apt',
     installDependencies: false,
+    pythonPackages: [],
     installTools: false,
     configureFirewall: false
   });
 
+  const [newPackage, setNewPackage] = useState('');
   const [dryRun, setDryRun] = useState(false);
   const [activeTab, setActiveTab] = useState<'console' | 'history'>('console');
 
@@ -63,62 +65,80 @@ const App: React.FC = () => {
     }]);
   }, []);
 
+  const handleAddPackage = () => {
+    const pkg = newPackage.trim();
+    if (pkg && !sysConfig.pythonPackages.includes(pkg)) {
+      setSysConfig(prev => ({ ...prev, pythonPackages: [...prev.pythonPackages, pkg] }));
+      setNewPackage('');
+    }
+  };
+
+  const handleRemovePackage = (pkg: string) => {
+    setSysConfig(prev => ({ ...prev, pythonPackages: prev.pythonPackages.filter(p => p !== pkg) }));
+  };
+
   const generateCommand = () => {
-    const lines: string[] = [];
+    const lines: string[] = ['#!/bin/bash', ''];
     const pm = sysConfig.packageManager;
+
+    // Define Install Command based on PM
+    let installCmd = '';
+    switch (pm) {
+        case 'apt': installCmd = 'sudo apt-get install -y'; break;
+        case 'dnf': installCmd = 'sudo dnf install -y'; break;
+        case 'yum': installCmd = 'sudo yum install -y'; break;
+        case 'pacman': installCmd = 'sudo pacman -Syu --noconfirm'; break;
+        case 'zypper': installCmd = 'sudo zypper install -y'; break;
+        case 'brew': installCmd = 'brew install'; break;
+    }
+
+    // Helper function for tool detection
+    if (sysConfig.installTools || sysConfig.configureFirewall) {
+        lines.push('# Function to detect and install missing tools');
+        lines.push('check_install() {');
+        lines.push('    CMD=$1');
+        lines.push('    PKG=$2');
+        lines.push('    if ! command -v "$CMD" &> /dev/null; then');
+        lines.push(`        echo "Tool $CMD not found. Installing $PKG..."`);
+        lines.push(`        ${installCmd} "$PKG"`);
+        lines.push('    else');
+        lines.push(`        echo "Tool $CMD is already installed."`);
+        lines.push('    fi');
+        lines.push('}');
+        lines.push('');
+    }
 
     // System Setup Commands
     if (sysConfig.installTools) {
-        lines.push(`# Install System Tools using ${pm}`);
+        lines.push('# --- System Tools Detection & Installation ---');
         
-        // Define packages based on distro
-        let tools = ['git', 'curl'];
+        lines.push('check_install git git');
+        lines.push('check_install curl curl');
         
-        // Add GH CLI if needed (assuming repo exists or basic package)
-        tools.push('gh');
+        if (source.useGh) {
+            lines.push('check_install gh gh');
+        }
 
-        if (pm === 'apt') tools.push('openssh-client', 'ufw');
-        else if (pm === 'dnf' || pm === 'yum') tools.push('openssh-clients', 'firewalld');
-        else if (pm === 'pacman') tools.push('openssh', 'ufw');
-        else if (pm === 'zypper') tools.push('openssh', 'firewalld');
-        else if (pm === 'brew') tools.push('openssh');
-
-        // Generate Install Command
-        switch (pm) {
-            case 'apt':
-                lines.push('sudo apt-get update');
-                lines.push(`sudo apt-get install -y ${tools.join(' ')}`);
-                break;
-            case 'dnf':
-                lines.push(`sudo dnf install -y ${tools.join(' ')}`);
-                break;
-            case 'yum':
-                lines.push(`sudo yum install -y ${tools.join(' ')}`);
-                break;
-            case 'pacman':
-                lines.push(`sudo pacman -Syu --noconfirm ${tools.join(' ')}`);
-                break;
-            case 'zypper':
-                lines.push(`sudo zypper install -y ${tools.join(' ')}`);
-                break;
-            case 'brew':
-                lines.push(`brew install ${tools.join(' ')}`);
-                break;
+        if (['apt', 'pacman'].includes(pm)) {
+            lines.push('check_install ssh openssh-client'); // or openssh for pacman, simplified here
+        } else {
+            lines.push('check_install ssh openssh');
         }
     }
 
     if (sysConfig.configureFirewall) {
-        lines.push('# Configure Firewall');
-        
-        // UFW (Debian/Ubuntu/Arch)
+        lines.push('');
+        lines.push('# --- Firewall Configuration ---');
         if (['apt', 'pacman'].includes(pm)) {
+            lines.push('check_install ufw ufw');
+            lines.push('echo "Configuring UFW..."');
             lines.push('sudo ufw allow ssh');
             lines.push('sudo ufw allow 80/tcp');
             lines.push('sudo ufw allow 443/tcp');
             lines.push('sudo ufw --force enable');
-        } 
-        // Firewalld (Fedora/RHEL/Suse)
-        else if (['dnf', 'yum', 'zypper'].includes(pm)) {
+        } else if (['dnf', 'yum', 'zypper'].includes(pm)) {
+            lines.push('check_install firewall-cmd firewalld');
+            lines.push('echo "Configuring Firewalld..."');
             lines.push('sudo systemctl enable --now firewalld');
             lines.push('sudo firewall-cmd --permanent --add-service=ssh');
             lines.push('sudo firewall-cmd --permanent --add-service=http');
@@ -130,12 +150,24 @@ const App: React.FC = () => {
     }
 
     if (sysConfig.installDependencies) {
-        lines.push('# Install Python Dependencies');
+        lines.push('');
+        lines.push('# --- Python Dependencies ---');
+        if (sysConfig.pythonPackages.length > 0) {
+             lines.push('echo "Building requirements.txt..."');
+             lines.push('cat <<EOF > requirements.txt');
+             sysConfig.pythonPackages.forEach(pkg => {
+                 lines.push(pkg);
+             });
+             lines.push('EOF');
+        } else {
+            lines.push('# No specific packages listed in GUI. Assuming requirements.txt exists.');
+        }
         lines.push('pip3 install -r requirements.txt');
     }
 
     // Main Sync Command
-    if (lines.length > 0) lines.push('\n# Run Sync');
+    lines.push('');
+    lines.push('# --- Run Sync Operation ---');
     
     let cmd = '';
     if (target.forceSudo) {
@@ -212,26 +244,29 @@ const App: React.FC = () => {
 
     // System Config Logs
     if (sysConfig.installTools) {
-        addLog(`[Config] Install System Tools: ON (${pm})`);
+        addLog(`[Config] Tool Detection: ON (Checks git, curl, ssh...)`);
     }
     if (sysConfig.configureFirewall) {
-        addLog(`[Config] Configure Firewall: ON`);
+        addLog(`[Config] Firewall Config: ON`);
     }
     if (sysConfig.installDependencies) {
-        addLog(`[Config] Install Python Dependencies: ON`);
+        addLog(`[Config] Python Dependencies: ${sysConfig.pythonPackages.length > 0 ? 'Build & Install' : 'Install existing'}`);
+        if (sysConfig.pythonPackages.length > 0) {
+             addLog(`   + Building requirements.txt with: ${sysConfig.pythonPackages.join(', ')}`);
+        }
     }
 
-    addLog('Generating synchronization command...');
+    addLog('Generating intelligent synchronization script...');
     
     // Slight delay for UX
     await new Promise(r => setTimeout(r, 400)); 
 
     const cmd = generateCommand();
-    addLog('Command generated successfully:', 'success');
+    addLog('Script generated successfully.', 'success');
     addLog(cmd, 'info');
 
     addLog('================================================================');
-    addLog('Ready for execution. Please run the generated command in your terminal.', 'warning');
+    addLog('Ready for execution. Copy the generated script to the target environment.', 'warning');
     
     if (!dryRun) {
         setHistory(prev => [{
@@ -350,11 +385,9 @@ const App: React.FC = () => {
                     >
                         {sysConfig.installTools ? <CheckSquare size={16} className="text-blue-500" /> : <Square size={16} className="text-slate-500" />}
                         <div>
-                            <div className="text-xs font-medium text-slate-200">Install System Tools</div>
+                            <div className="text-xs font-medium text-slate-200">Detect & Install System Tools</div>
                             <div className="text-[10px] text-slate-500">
-                                {sysConfig.packageManager === 'apt' ? 'git, gh, openssh-client, ufw' : 
-                                 sysConfig.packageManager === 'dnf' ? 'git, gh, openssh-clients, firewalld' : 
-                                 'git, gh, ssh tools, firewall tools'}
+                                Checks for git, gh, ssh, firewall tools
                             </div>
                         </div>
                     </button>
@@ -367,8 +400,7 @@ const App: React.FC = () => {
                         <div>
                             <div className="text-xs font-medium text-slate-200">Configure Firewall</div>
                             <div className="text-[10px] text-slate-500">
-                                {['apt', 'pacman'].includes(sysConfig.packageManager) ? 'Allow ports via ufw' : 
-                                 ['dnf', 'yum', 'zypper'].includes(sysConfig.packageManager) ? 'Allow services via firewalld' : 'Manual configuration'}
+                                Ensure SSH/Web ports are open
                             </div>
                         </div>
                     </button>
@@ -380,9 +412,41 @@ const App: React.FC = () => {
                         {sysConfig.installDependencies ? <CheckSquare size={16} className="text-blue-500" /> : <Square size={16} className="text-slate-500" />}
                         <div>
                             <div className="text-xs font-medium text-slate-200">Install Dependencies</div>
-                            <div className="text-[10px] text-slate-500">pip install -r requirements.txt</div>
+                            <div className="text-[10px] text-slate-500">Builds requirements.txt & runs pip install</div>
                         </div>
                     </button>
+
+                    {/* Dependencies Manager UI */}
+                    {sysConfig.installDependencies && (
+                      <div className="mt-2 pl-7 pr-1 space-y-2 animate-fadeIn border-l-2 border-slate-700 ml-1.5">
+                         <div className="flex gap-2">
+                           <input 
+                             value={newPackage} 
+                             onChange={(e) => setNewPackage(e.target.value)}
+                             onKeyDown={(e) => e.key === 'Enter' && handleAddPackage()}
+                             placeholder="Add package (e.g. pandas)"
+                             className="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 focus:outline-none focus:border-blue-500"
+                           />
+                           <button 
+                             onClick={handleAddPackage}
+                             className="bg-blue-600 hover:bg-blue-500 text-white rounded px-2 py-1 flex items-center justify-center transition-colors"
+                           >
+                             <Plus size={14} />
+                           </button>
+                         </div>
+                         <div className="flex flex-wrap gap-1.5">
+                           {sysConfig.pythonPackages.length === 0 && (
+                             <span className="text-[10px] text-slate-500 italic">No packages specified. Will use existing requirements.txt if present.</span>
+                           )}
+                           {sysConfig.pythonPackages.map(pkg => (
+                              <span key={pkg} className="bg-slate-800 text-slate-300 border border-slate-700 text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 group">
+                                {pkg} 
+                                <button onClick={() => handleRemovePackage(pkg)} className="text-slate-500 group-hover:text-red-400"><X size={10} /></button>
+                              </span>
+                           ))}
+                         </div>
+                      </div>
+                    )}
                 </div>
               </div>
 
@@ -416,14 +480,14 @@ const App: React.FC = () => {
                   ) : (
                     <Play size={20} fill="currentColor" />
                   )}
-                  {isSyncing ? 'Processing...' : 'Generate Command'}
+                  {isSyncing ? 'Processing...' : 'Generate Script'}
                 </button>
               </div>
 
               {/* Command Preview */}
               <div className="bg-black/40 rounded border border-slate-800 p-3">
                 <div className="text-xs text-slate-500 mb-1 flex items-center gap-1">
-                  <Command size={10} /> Generated Command
+                  <Command size={10} /> Generated Script
                 </div>
                 <code className="text-xs font-mono text-emerald-400 break-all whitespace-pre-wrap block max-h-40 overflow-y-auto">
                   {generateCommand()}
