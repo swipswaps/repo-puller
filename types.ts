@@ -1,4 +1,5 @@
 export type SourceType = 'local' | 'ssh' | 'git';
+export type PackageManager = 'apt' | 'dnf' | 'yum' | 'pacman' | 'zypper' | 'brew';
 
 export interface RepoConfig {
   type: SourceType;
@@ -13,6 +14,7 @@ export interface RepoConfig {
 }
 
 export interface SystemConfig {
+  packageManager: PackageManager;
   installDependencies: boolean;
   installTools: boolean; // gh, ssh, ufw, etc.
   configureFirewall: boolean;

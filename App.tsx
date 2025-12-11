@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { ArrowRight, Play, RefreshCw, Command, Settings, Database, Activity, ShieldAlert, CheckSquare, Square } from 'lucide-react';
+import { ArrowRight, Play, RefreshCw, Command, Settings, Database, Activity, ShieldAlert, CheckSquare, Square, Box } from 'lucide-react';
 import PathSelector from './components/PathSelector';
 import Terminal from './components/Terminal';
 import HistoryTable from './components/HistoryTable';
-import { RepoConfig, SyncLog, SyncOperation, SystemConfig } from './types';
+import { RepoConfig, SyncLog, SyncOperation, SystemConfig, PackageManager } from './types';
 
 const App: React.FC = () => {
   // State for the Repo Puller configuration
@@ -12,6 +12,7 @@ const App: React.FC = () => {
   
   // System Configuration State
   const [sysConfig, setSysConfig] = useState<SystemConfig>({
+    packageManager: 'apt',
     installDependencies: false,
     installTools: false,
     configureFirewall: false
@@ -64,20 +65,68 @@ const App: React.FC = () => {
 
   const generateCommand = () => {
     const lines: string[] = [];
+    const pm = sysConfig.packageManager;
 
     // System Setup Commands
     if (sysConfig.installTools) {
-        lines.push('# Install System Tools');
-        lines.push('sudo apt-get update');
-        lines.push('sudo apt-get install -y git gh openssh-client ufw curl');
+        lines.push(`# Install System Tools using ${pm}`);
+        
+        // Define packages based on distro
+        let tools = ['git', 'curl'];
+        
+        // Add GH CLI if needed (assuming repo exists or basic package)
+        tools.push('gh');
+
+        if (pm === 'apt') tools.push('openssh-client', 'ufw');
+        else if (pm === 'dnf' || pm === 'yum') tools.push('openssh-clients', 'firewalld');
+        else if (pm === 'pacman') tools.push('openssh', 'ufw');
+        else if (pm === 'zypper') tools.push('openssh', 'firewalld');
+        else if (pm === 'brew') tools.push('openssh');
+
+        // Generate Install Command
+        switch (pm) {
+            case 'apt':
+                lines.push('sudo apt-get update');
+                lines.push(`sudo apt-get install -y ${tools.join(' ')}`);
+                break;
+            case 'dnf':
+                lines.push(`sudo dnf install -y ${tools.join(' ')}`);
+                break;
+            case 'yum':
+                lines.push(`sudo yum install -y ${tools.join(' ')}`);
+                break;
+            case 'pacman':
+                lines.push(`sudo pacman -Syu --noconfirm ${tools.join(' ')}`);
+                break;
+            case 'zypper':
+                lines.push(`sudo zypper install -y ${tools.join(' ')}`);
+                break;
+            case 'brew':
+                lines.push(`brew install ${tools.join(' ')}`);
+                break;
+        }
     }
 
     if (sysConfig.configureFirewall) {
         lines.push('# Configure Firewall');
-        lines.push('sudo ufw allow ssh');
-        lines.push('sudo ufw allow 80/tcp');
-        lines.push('sudo ufw allow 443/tcp');
-        lines.push('sudo ufw --force enable');
+        
+        // UFW (Debian/Ubuntu/Arch)
+        if (['apt', 'pacman'].includes(pm)) {
+            lines.push('sudo ufw allow ssh');
+            lines.push('sudo ufw allow 80/tcp');
+            lines.push('sudo ufw allow 443/tcp');
+            lines.push('sudo ufw --force enable');
+        } 
+        // Firewalld (Fedora/RHEL/Suse)
+        else if (['dnf', 'yum', 'zypper'].includes(pm)) {
+            lines.push('sudo systemctl enable --now firewalld');
+            lines.push('sudo firewall-cmd --permanent --add-service=ssh');
+            lines.push('sudo firewall-cmd --permanent --add-service=http');
+            lines.push('sudo firewall-cmd --permanent --add-service=https');
+            lines.push('sudo firewall-cmd --reload');
+        } else {
+            lines.push('# Manual firewall configuration required for this OS/Environment');
+        }
     }
 
     if (sysConfig.installDependencies) {
@@ -130,23 +179,36 @@ const App: React.FC = () => {
     setIsSyncing(true);
     setLogs([]);
     setActiveTab('console');
+    const pm = sysConfig.packageManager;
 
-    addLog('Repo Puller - Operation Started');
+    addLog(`Repo Puller - Operation Started [Manager: ${pm.toUpperCase()}]`);
     
     // Simulation: Installation
     if (sysConfig.installTools) {
-        addLog('Updating package lists (sudo apt-get update)...');
-        await new Promise(r => setTimeout(r, 800));
-        addLog('Installing tools: git, gh, openssh-client, ufw...', 'warning');
+        if (pm === 'apt') addLog('Updating package lists (sudo apt-get update)...');
+        
+        let toolNameList = 'git, gh, curl';
+        if (['dnf', 'yum', 'zypper'].includes(pm)) toolNameList += ', openssh-clients, firewalld';
+        else toolNameList += ', openssh-client, ufw';
+        
+        addLog(`Installing tools via ${pm}: ${toolNameList}...`, 'warning');
         await new Promise(r => setTimeout(r, 1500));
         addLog('✅ System tools installed.', 'success');
     }
 
     // Simulation: Firewall
     if (sysConfig.configureFirewall) {
-        addLog('Configuring firewall (ufw)...', 'warning');
-        await new Promise(r => setTimeout(r, 600));
-        addLog('✅ Firewall rules updated (Allow SSH, 80, 443).', 'success');
+        if (['dnf', 'yum', 'zypper'].includes(pm)) {
+            addLog('Configuring firewall (firewall-cmd)...', 'warning');
+            await new Promise(r => setTimeout(r, 600));
+            addLog('✅ Firewall rules updated (ssh, http, https).', 'success');
+        } else if (['apt', 'pacman'].includes(pm)) {
+            addLog('Configuring firewall (ufw)...', 'warning');
+            await new Promise(r => setTimeout(r, 600));
+            addLog('✅ Firewall rules updated (Allow SSH, 80, 443).', 'success');
+        } else {
+             addLog('⚠️ Skipping firewall config (Not supported for selected OS).', 'warning');
+        }
     }
 
     // Simulation: Dependencies
@@ -244,6 +306,10 @@ const App: React.FC = () => {
     setSysConfig(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const handlePmChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSysConfig(prev => ({ ...prev, packageManager: e.target.value as PackageManager }));
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
@@ -298,10 +364,30 @@ const App: React.FC = () => {
 
               {/* System Configuration Panel */}
               <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
-                <div className="flex items-center gap-2 mb-3 text-slate-300 text-sm font-semibold">
-                    <ShieldAlert size={14} className="text-orange-400" />
-                    <span>System & Prerequisites (Sudo Required)</span>
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2 text-slate-300 text-sm font-semibold">
+                        <ShieldAlert size={14} className="text-orange-400" />
+                        <span>System Setup</span>
+                    </div>
+                    
+                    {/* Package Manager Selector */}
+                    <div className="flex items-center gap-2">
+                        <Box size={14} className="text-slate-500" />
+                        <select 
+                            value={sysConfig.packageManager}
+                            onChange={handlePmChange}
+                            className="bg-slate-800 border border-slate-700 text-xs text-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-500"
+                        >
+                            <option value="apt">APT (Debian/Ubuntu)</option>
+                            <option value="dnf">DNF (Fedora/RHEL)</option>
+                            <option value="yum">YUM (CentOS/RHEL)</option>
+                            <option value="pacman">Pacman (Arch)</option>
+                            <option value="zypper">Zypper (OpenSUSE)</option>
+                            <option value="brew">Homebrew (macOS)</option>
+                        </select>
+                    </div>
                 </div>
+
                 <div className="space-y-2">
                     <button 
                         onClick={() => toggleSysConfig('installTools')}
@@ -310,7 +396,11 @@ const App: React.FC = () => {
                         {sysConfig.installTools ? <CheckSquare size={16} className="text-blue-500" /> : <Square size={16} className="text-slate-500" />}
                         <div>
                             <div className="text-xs font-medium text-slate-200">Install System Tools</div>
-                            <div className="text-[10px] text-slate-500">git, gh, openssh-client, ufw, curl</div>
+                            <div className="text-[10px] text-slate-500">
+                                {sysConfig.packageManager === 'apt' ? 'git, gh, openssh-client, ufw' : 
+                                 sysConfig.packageManager === 'dnf' ? 'git, gh, openssh-clients, firewalld' : 
+                                 'git, gh, ssh tools, firewall tools'}
+                            </div>
                         </div>
                     </button>
                     
@@ -321,7 +411,10 @@ const App: React.FC = () => {
                         {sysConfig.configureFirewall ? <CheckSquare size={16} className="text-blue-500" /> : <Square size={16} className="text-slate-500" />}
                         <div>
                             <div className="text-xs font-medium text-slate-200">Configure Firewall</div>
-                            <div className="text-[10px] text-slate-500">Allow SSH, HTTP/HTTPS via ufw</div>
+                            <div className="text-[10px] text-slate-500">
+                                {['apt', 'pacman'].includes(sysConfig.packageManager) ? 'Allow ports via ufw' : 
+                                 ['dnf', 'yum', 'zypper'].includes(sysConfig.packageManager) ? 'Allow services via firewalld' : 'Manual configuration'}
+                            </div>
                         </div>
                     </button>
 
